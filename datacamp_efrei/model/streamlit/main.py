@@ -40,9 +40,14 @@ with st.sidebar:
 if tabs == 'Tableau de bord':
 
     st.title('Avis Luggage Superstore')
-    st.metric(label="Total des avis", value=total_reviews)
-    st.metric(label="Note moyenne", value=round(average_note, 2))
-    st.metric(label="Date du dernier avis", value=latest_review_date.strftime('%Y-%m-%d'))
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(label="Total des avis", value=total_reviews)
+    with col2:
+        st.metric(label="Note moyenne", value=round(average_note, 2))
+    with col3:
+        st.metric(label="Date du dernier avis", value=latest_review_date.strftime('%Y-%m-%d'))
 
     st.title('Note moyenne par année')
     yearly_avg_note = filtered_df.groupby('Year')['Note'].mean().reset_index()
@@ -58,7 +63,7 @@ if tabs == 'Tableau de bord':
 elif tabs == 'Nuage de mots':
 
     text = " ".join(str(review) for review in filtered_df["Contenu de l'avis"])
-    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
+    wordcloud = WordCloud(width=800, height=400, background_color='black').generate(text)
     st.title(
         f'Nuage de mots des avis pour les années {selected_year[0]}-{selected_year[1]} et les notes {selected_note[0]}-{selected_note[1]}')
     fig, ax = plt.subplots()
@@ -70,7 +75,6 @@ elif tabs == 'Carte':
     st.title("Carte")
     review_counts = filtered_df['Pays'].value_counts().reset_index()
     review_counts.columns = ['Pays', 'Review Count']
-
     fig = px.choropleth(
         review_counts,
         locations="Pays",
@@ -80,13 +84,17 @@ elif tabs == 'Carte':
         color_continuous_scale=px.colors.sequential.Reds,
         title="Nombre d'avis par pays"
     )
+    fig.update_layout(margin=dict(l=13, r=13, t=13, b=20))
 
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, use_container_width=True )
     fig = px.pie(
         review_counts,
         names='Pays',
         values='Review Count',
-        title="Nombre d'avis par pays"
+        title="Nombre d'avis par pays",
+
     )
 
-    st.plotly_chart(fig)
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+
+    st.plotly_chart(fig, use_container_width=True)
