@@ -1,57 +1,92 @@
 import streamlit as st
 import pandas as pd
+import os
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import re
-from nltk.corpus import stopwords
-import nltk
+from st_on_hover_tabs import on_hover_tabs
+import plotly.express as px
 
-# Télécharger les stopwords
-nltk.download('stopwords')
+csv_path = os.path.join(os.path.dirname(__file__), 'avis_transformes_4.csv')
+df = pd.read_csv(csv_path)
 
-# Fonction pour nettoyer le texte
-def nettoyer_texte(texte):
-    texte = str(texte).lower()  # Mettre en minuscule
-    texte = re.sub(r'\s+', ' ', texte)  # Supprimer les espaces excessifs
-    texte = re.sub(r'[^\w\s]', '', texte)  # Supprimer les caractères non alphanumériques
-    return texte
+st.set_page_config(layout="wide")
+style_path = os.path.join(os.path.dirname(__file__), 'style.css')
 
-# Titre de l'application
-st.title("Nuage de mots - Analyse des Avis Clients")
+df['Date de publication'] = pd.to_datetime(df['Date de publication'], format='ISO8601')
+df['Year'] = df['Date de publication'].dt.year
 
-# Télécharger un fichier CSV
-uploaded_file = st.file_uploader("Téléchargez votre fichier CSV", type=["csv"])
+min_note, max_note = int(df['Note'].min()), int(df['Note'].max())
+selected_note = st.slider('Filtre par note', min_value=min_note, max_value=max_note, value=(min_note, max_note))
 
-if uploaded_file is not None:
-    # Charger les données
-    df = pd.read_csv(uploaded_file)
+min_year, max_year = int(df['Year'].min()), int(df['Year'].max())
+selected_year = st.slider('Filtre par année', min_value=min_year, max_value=max_year, value=(min_year, max_year))
 
-    # Afficher les premières lignes du fichier
-    st.subheader("Aperçu des données")
-    st.dataframe(df.head())
+filtered_df = df[(df['Note'] >= selected_note[0]) & (df['Note'] <= selected_note[1]) &
+                 (df['Year'] >= selected_year[0]) & (df['Year'] <= selected_year[1])]
 
-    # Nettoyer la colonne des avis (supposons que la colonne s'appelle 'Contenu de l\'avis')
-    if 'Contenu de l\'avis' in df.columns:
-        df['Contenu de l\'avis'] = df['Contenu de l\'avis'].apply(nettoyer_texte)
+total_reviews = len(filtered_df)
+average_note = filtered_df['Note'].mean()
+latest_review_date = filtered_df['Date de publication'].max()
 
-        # Fusionner tous les avis
-        text = ' '.join(df['Contenu de l\'avis'].dropna())
-
-        # Exclure les mots vides
-        stop_words = set(stopwords.words('english'))
-        filtered_text = ' '.join([word for word in text.split() if word not in stop_words])
-
-        # Générer le nuage de mots
-        wordcloud = WordCloud(width=800, height=400, background_color='white').generate(filtered_text)
-
-        # Afficher le nuage de mots
-        st.subheader("Nuage de mots")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.imshow(wordcloud, interpolation='bilinear')
-        ax.axis('off')
-        st.pyplot(fig)
-
-    else:
-        st.error("La colonne 'Contenu de l'avis' n'existe pas dans le fichier.")
+if os.path.exists(style_path):
+    st.markdown('<style>' + open(style_path).read() + '</style>', unsafe_allow_html=True)
 else:
-    st.info("Veuillez télécharger un fichier CSV pour commencer.")
+    st.warning('style.css file not found.')
+
+with st.sidebar:
+    tabs = on_hover_tabs(tabName=['Tableau de bord', 'Nuage de mots', 'Carte'],
+                         iconName=['dashboard', 'Nuage de mots', 'Carte'], default_choice=0)
+
+if tabs == 'Tableau de bord':
+
+    st.title('Avis Luggage Superstore')
+    st.metric(label="Total des avis", value=total_reviews)
+    st.metric(label="Note moyenne", value=round(average_note, 2))
+    st.metric(label="Date du dernier avis", value=latest_review_date.strftime('%Y-%m-%d'))
+
+    st.title('Note moyenne par année')
+    yearly_avg_note = filtered_df.groupby('Year')['Note'].mean().reset_index()
+    chart = st.empty()
+    for year in yearly_avg_note['Year']:
+        data = yearly_avg_note[yearly_avg_note['Year'] <= year]
+        chart.bar_chart(data.set_index('Year'))
+
+    st.title('Distribution des notes par année')
+    note_distribution = filtered_df.groupby(['Year', 'Note']).size().unstack(fill_value=0)
+    st.bar_chart(note_distribution)
+
+elif tabs == 'Nuage de mots':
+
+    text = " ".join(str(review) for review in filtered_df["Contenu de l'avis"])
+    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
+    st.title(
+        f'Nuage de mots des avis pour les années {selected_year[0]}-{selected_year[1]} et les notes {selected_note[0]}-{selected_note[1]}')
+    fig, ax = plt.subplots()
+    ax.imshow(wordcloud, interpolation='bilinear')
+    ax.axis('off')
+    st.pyplot(fig)
+
+elif tabs == 'Carte':
+    st.title("Carte")
+    review_counts = filtered_df['Pays'].value_counts().reset_index()
+    review_counts.columns = ['Pays', 'Review Count']
+
+    fig = px.choropleth(
+        review_counts,
+        locations="Pays",
+        locationmode="country names",
+        color="Review Count",
+        hover_name="Pays",
+        color_continuous_scale=px.colors.sequential.Reds,
+        title="Nombre d'avis par pays"
+    )
+
+    st.plotly_chart(fig)
+    fig = px.pie(
+        review_counts,
+        names='Pays',
+        values='Review Count',
+        title="Nombre d'avis par pays"
+    )
+
+    st.plotly_chart(fig)
